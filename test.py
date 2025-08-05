@@ -10,6 +10,16 @@ import librosa.display
 from scipy import signal
 import soundfile as sf
 import io
+from basic_pitch.inference import predict
+import basic_pitch
+
+# Fix for missing scipy.signal.gaussian in newer versions
+if not hasattr(signal, 'gaussian'):
+    def gaussian(M, std, sym=True):
+        """Create a Gaussian window."""
+        from scipy.signal.windows import gaussian as gaussian_window
+        return gaussian_window(M, std, sym=sym)
+    signal.gaussian = gaussian
 
 def midi_to_audio(midi_path):
     """Convert MIDI file to audio for playback"""
@@ -30,150 +40,38 @@ def midi_to_audio(midi_path):
         return None
 
 def transcribe_to_midi(audio_file):
-    """Convert audio file to MIDI using librosa pitch detection with proper note grouping"""
+    """Convert audio file to MIDI using basic-pitch library"""
     # Save uploaded file to temporary location
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
         tmp_file.write(audio_file.read())
         audio_path = tmp_file.name
     
-    # Load audio
-    y, sr = librosa.load(audio_path, sr=22050)
-    
-    # Extract pitch using librosa with higher resolution
-    pitches, magnitudes = librosa.piptrack(y=y, sr=sr, threshold=0.1, hop_length=512)
-    
-    # Create MIDI file
-    midi_path = audio_path.replace('.mp3', '.mid')
-    midi_data = pretty_midi.PrettyMIDI()
-    piano_program = pretty_midi.Instrument(program=0)  # Piano
-    
-    # Parameters for note detection
-    min_note_duration = 0.1  # Minimum note duration in seconds
-    pitch_tolerance = 1  # Semitones tolerance for grouping same notes
-    silence_threshold = 0.05  # Threshold for detecting silence
-    silence_duration = 0.01  # Minimum silence duration to separate notes
-    magnitude_drop_threshold = 0.2  # Threshold for detecting note separation by magnitude drop
-    
-    # Process pitch data to group into notes
-    notes = []
-    current_note = None
-    silence_start = None
-    last_magnitude = 0
-    
-    for t in range(pitches.shape[1]):
-        pitch = pitches[:, t]
-        magnitude = magnitudes[:, t]
-        current_time = t * librosa.get_duration(y=y, sr=sr) / pitches.shape[1]
-        max_magnitude = np.max(magnitude)
+    try:
+        # Transcribe audio to MIDI using basic-pitch
+        midi_path = audio_path.replace('.mp3', '.mid')
         
-        # Check if this is silence
-        is_silence = max_magnitude <= silence_threshold
+        # Use the predict function which returns model outputs, MIDI data, and notes
+        # Try using the ONNX model which should work better
+        model_path_str = str(basic_pitch.ICASSP_2022_MODEL_PATH)
+        onnx_model_path = model_path_str.replace('/nmp', '/nmp.onnx')
+        model_outputs, midi_data, notes = predict(audio_path, onnx_model_path)
         
-        # Check for significant magnitude drop (indicates note separation)
-        magnitude_drop = False
-        if last_magnitude > 0:
-            magnitude_drop = (last_magnitude - max_magnitude) / last_magnitude > magnitude_drop_threshold
+        # Save the MIDI file
+        midi_data.write(midi_path)
         
-        if is_silence:
-            # Track silence duration
-            if silence_start is None:
-                silence_start = current_time
-            
-            # If we have a current note and silence is long enough, finalize the note
-            if current_note is not None and (current_time - silence_start) >= silence_duration:
-                if current_note['end'] - current_note['start'] >= min_note_duration:
-                    notes.append(current_note)
-                current_note = None
-        else:
-            # Reset silence tracking
-            silence_start = None
-            
-            # Find the strongest pitch at this time
-            pitch_idx = np.argmax(magnitude)
-            pitch_value = pitch[pitch_idx]
-            
-            if pitch_value > 0:
-                # Convert frequency to MIDI note number
-                midi_note = int(round(12 * np.log2(pitch_value / 440) + 69))
-                
-                # Ensure note is in valid range
-                if 21 <= midi_note <= 108:
-                    # Calculate velocity (ensure it's in valid MIDI range 0-127)
-                    velocity = int(np.clip(max_magnitude * 127, 1, 127))
-                    
-                    if current_note is None:
-                        # Start new note
-                        current_note = {
-                            'pitch': midi_note,
-                            'start': current_time,
-                            'end': current_time,  # Initialize end time
-                            'velocity': velocity
-                        }
-                    elif abs(midi_note - current_note['pitch']) <= pitch_tolerance:
-                        # Same pitch detected - check if we should separate notes
-                        if magnitude_drop and (current_time - current_note['start']) > min_note_duration:
-                            # Significant magnitude drop indicates note separation
-                            if current_note['end'] - current_note['start'] >= min_note_duration:
-                                notes.append(current_note)
-                            
-                            # Start new note
-                            current_note = {
-                                'pitch': midi_note,
-                                'start': current_time,
-                                'end': current_time,
-                                'velocity': velocity
-                            }
-                        else:
-                            # Continue current note
-                            current_note['end'] = current_time
-                    else:
-                        # Different note detected, finalize current note and start new one
-                        if current_note['end'] - current_note['start'] >= min_note_duration:
-                            notes.append(current_note)
-                        
-                        current_note = {
-                            'pitch': midi_note,
-                            'start': current_time,
-                            'end': current_time,  # Initialize end time
-                            'velocity': velocity
-                        }
-                else:
-                    # Finalize current note if we have one
-                    if current_note is not None:
-                        if current_note['end'] - current_note['start'] >= min_note_duration:
-                            notes.append(current_note)
-                        current_note = None
-            else:
-                # Finalize current note if we have one
-                if current_note is not None:
-                    if current_note['end'] - current_note['start'] >= min_note_duration:
-                        notes.append(current_note)
-                    current_note = None
+        # Clean up temporary audio file
+        os.unlink(audio_path)
         
-        last_magnitude = max_magnitude
-    
-    # Add final note if exists
-    if current_note is not None:
-        if current_note['end'] - current_note['start'] >= min_note_duration:
-            notes.append(current_note)
-    
-    # Create MIDI notes
-    for note_info in notes:
-        note = pretty_midi.Note(
-            velocity=note_info['velocity'],
-            pitch=note_info['pitch'],
-            start=note_info['start'],
-            end=note_info['end']
-        )
-        piano_program.notes.append(note)
-    
-    midi_data.instruments.append(piano_program)
-    midi_data.write(midi_path)
-    
-    # Clean up temporary audio file
-    os.unlink(audio_path)
-    
-    return midi_path
+        return midi_path
+        
+    except Exception as e:
+        st.error(f"Error transcribing audio: {str(e)}")
+        # Clean up temporary audio file
+        try:
+            os.unlink(audio_path)
+        except:
+            pass
+        return None
 
 def extract_notes(midi_path):
     """Extract note sequence from MIDI file"""
