@@ -339,6 +339,108 @@ def open_in_musescore(midi_path):
         st.error(f"Error converting MIDI to MuseScore: {str(e)}")
         st.info("Make sure MuseScore is installed in /Applications/")
 
+def open_pdf_from_midi(midi_path):
+    """Convert MIDI to PDF and open it"""
+    try:
+        # Create a more sensible output directory
+        output_dir = os.path.expanduser("~/Desktop/shoehorners_output")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Copy the MIDI file to the output directory with a better name
+        import shutil
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_midi_path = os.path.join(output_dir, f"transcribed_music_{timestamp}.mid")
+        output_mscz_path = os.path.join(output_dir, f"transcribed_music_{timestamp}.mscz")
+        output_pdf_path = os.path.join(output_dir, f"transcribed_music_{timestamp}.pdf")
+        
+        # Copy the file
+        shutil.copy2(midi_path, output_midi_path)
+        
+        # Convert MIDI to PDF using MuseScore
+        if platform.system() == "Windows":
+            musescore_exe = r"C:\Program Files\MuseScore 4\bin\MuseScore4.exe"
+            if not os.path.exists(musescore_exe):
+                musescore_exe = r"C:\Program Files\MuseScore 3\bin\MuseScore3.exe"
+            
+            if os.path.exists(musescore_exe):
+                # Convert MIDI to PDF
+                result = subprocess.run([musescore_exe, "-o", output_pdf_path, output_midi_path], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    # Open the PDF file
+                    subprocess.Popen([musescore_exe, output_pdf_path])
+                else:
+                    st.error(f"Error converting MIDI to PDF: {result.stderr}")
+                    return
+            else:
+                st.error("MuseScore not found on Windows")
+                return
+                
+        elif platform.system() == "Darwin": # macOS
+            # Try different possible app names and paths for macOS
+            possible_paths = [
+                "/Applications/MuseScore 4.app/Contents/MacOS/mscore",
+                "/Applications/MuseScore 3.app/Contents/MacOS/mscore",
+                "/Applications/MuseScore.app/Contents/MacOS/mscore"
+            ]
+            
+            # Check if any of the possible paths exist
+            musescore_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    musescore_path = path
+                    break
+            
+            if musescore_path:
+                # Convert MIDI to PDF
+                result = subprocess.run([musescore_path, "-o", output_pdf_path, output_midi_path], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    # Open the PDF file
+                    subprocess.run(["open", output_pdf_path])
+                else:
+                    st.error(f"Error converting MIDI to PDF: {result.stderr}")
+                    return
+            else:
+                st.error("MuseScore not found on macOS")
+                return
+                
+        else: # Linux
+            # Try different Linux commands
+            musescore_cmds = ["musescore4", "musescore3", "musescore"]
+            musescore_cmd = None
+            
+            for cmd in musescore_cmds:
+                try:
+                    subprocess.run([cmd, "--version"], capture_output=True, check=True)
+                    musescore_cmd = cmd
+                    break
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    continue
+            
+            if musescore_cmd:
+                # Convert MIDI to PDF
+                result = subprocess.run([musescore_cmd, "-o", output_pdf_path, output_midi_path], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    # Open the PDF file
+                    subprocess.Popen([musescore_cmd, output_pdf_path])
+                else:
+                    st.error(f"Error converting MIDI to PDF: {result.stderr}")
+                    return
+            else:
+                st.error("MuseScore not found on Linux")
+                return
+        
+        st.success(f"Converted and opened {output_pdf_path} in PDF viewer.")
+        st.info(f"Files saved to: {output_dir}")
+        
+    except Exception as e:
+        st.error(f"Error converting MIDI to PDF: {str(e)}")
+        st.info("Make sure MuseScore is installed in /Applications/")
+
 # Streamlit app
 st.title("🎵 Music Transcription")
 st.write("Upload an MP3 file or provide a YouTube link to convert it to MIDI and analyze the music")
@@ -409,7 +511,7 @@ if youtube_url and is_valid_youtube_url(youtube_url):
                 st.audio(audio_bytes, format='audio/wav')
                 
                 # Download buttons
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     with open(midi_path, 'rb') as f:
                         st.download_button(
@@ -431,6 +533,10 @@ if youtube_url and is_valid_youtube_url(youtube_url):
                 with col3:
                     if st.button("🎼 Open in MuseScore"):
                         open_in_musescore(midi_path)
+                
+                with col4:
+                    if st.button("📄 Open PDF"):
+                        open_pdf_from_midi(midi_path)
             
             # Clean up temporary files
             try:
@@ -504,7 +610,7 @@ if os.path.exists(twinkle_path):
         st.audio(audio_bytes, format='audio/wav')
         
         # Download buttons
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             with open(midi_path, 'rb') as f:
                 st.download_button(
@@ -526,6 +632,10 @@ if os.path.exists(twinkle_path):
         with col3:
             if st.button("🎼 Open in MuseScore"):
                 open_in_musescore(midi_path)
+        
+        with col4:
+            if st.button("📄 Open PDF"):
+                open_pdf_from_midi(midi_path)
     
     # Clean up temporary files
     try:
@@ -572,7 +682,7 @@ if uploaded_file:
             st.audio(audio_bytes, format='audio/wav')
             
             # Download buttons
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 with open(midi_path, 'rb') as f:
                     st.download_button(
@@ -594,3 +704,7 @@ if uploaded_file:
             with col3:
                 if st.button("🎼 Open in MuseScore"):
                     open_in_musescore(midi_path)
+            
+            with col4:
+                if st.button("📄 Open PDF"):
+                    open_pdf_from_midi(midi_path)
