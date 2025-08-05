@@ -49,22 +49,30 @@ def transcribe_to_midi(audio_file):
     
     # Parameters for note detection
     min_note_duration = 0.1  # Minimum note duration in seconds
-    pitch_tolerance = 2  # Semitones tolerance for grouping same notes
+    pitch_tolerance = 1  # Semitones tolerance for grouping same notes
     silence_threshold = 0.05  # Threshold for detecting silence
-    silence_duration = 0.05  # Minimum silence duration to separate notes
+    silence_duration = 0.01  # Minimum silence duration to separate notes
+    magnitude_drop_threshold = 0.2  # Threshold for detecting note separation by magnitude drop
     
     # Process pitch data to group into notes
     notes = []
     current_note = None
     silence_start = None
+    last_magnitude = 0
     
     for t in range(pitches.shape[1]):
         pitch = pitches[:, t]
         magnitude = magnitudes[:, t]
         current_time = t * librosa.get_duration(y=y, sr=sr) / pitches.shape[1]
+        max_magnitude = np.max(magnitude)
         
         # Check if this is silence
-        is_silence = np.max(magnitude) <= silence_threshold
+        is_silence = max_magnitude <= silence_threshold
+        
+        # Check for significant magnitude drop (indicates note separation)
+        magnitude_drop = False
+        if last_magnitude > 0:
+            magnitude_drop = (last_magnitude - max_magnitude) / last_magnitude > magnitude_drop_threshold
         
         if is_silence:
             # Track silence duration
@@ -91,7 +99,7 @@ def transcribe_to_midi(audio_file):
                 # Ensure note is in valid range
                 if 21 <= midi_note <= 108:
                     # Calculate velocity (ensure it's in valid MIDI range 0-127)
-                    velocity = int(np.clip(np.max(magnitude) * 127, 1, 127))
+                    velocity = int(np.clip(max_magnitude * 127, 1, 127))
                     
                     if current_note is None:
                         # Start new note
@@ -102,8 +110,22 @@ def transcribe_to_midi(audio_file):
                             'velocity': velocity
                         }
                     elif abs(midi_note - current_note['pitch']) <= pitch_tolerance:
-                        # Continue current note
-                        current_note['end'] = current_time
+                        # Same pitch detected - check if we should separate notes
+                        if magnitude_drop and (current_time - current_note['start']) > min_note_duration:
+                            # Significant magnitude drop indicates note separation
+                            if current_note['end'] - current_note['start'] >= min_note_duration:
+                                notes.append(current_note)
+                            
+                            # Start new note
+                            current_note = {
+                                'pitch': midi_note,
+                                'start': current_time,
+                                'end': current_time,
+                                'velocity': velocity
+                            }
+                        else:
+                            # Continue current note
+                            current_note['end'] = current_time
                     else:
                         # Different note detected, finalize current note and start new one
                         if current_note['end'] - current_note['start'] >= min_note_duration:
@@ -127,6 +149,8 @@ def transcribe_to_midi(audio_file):
                     if current_note['end'] - current_note['start'] >= min_note_duration:
                         notes.append(current_note)
                     current_note = None
+        
+        last_magnitude = max_magnitude
     
     # Add final note if exists
     if current_note is not None:
