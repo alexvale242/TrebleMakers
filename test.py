@@ -195,8 +195,15 @@ def render_score(midi_path):
         # Create piano roll
         piano_roll = midi_data.get_piano_roll(fs=10)  # 10 Hz resolution
         
-        # Create visualization
-        fig, ax = plt.subplots(figsize=(12, 8))
+        # Calculate width based on duration to make it less compressed
+        duration = midi_data.get_end_time()
+        # Make width proportional to duration, but with reasonable limits
+        width = min(60, max(20, duration * 1.5))  # 1.5 inches per second, max 60 inches
+        # Make height reasonable but tall enough
+        height = min(40, max(16, width * 0.4))  # Height proportional to width, reasonable bounds
+        
+        # Create visualization with wider figure
+        fig, ax = plt.subplots(figsize=(width, height))
         
         # Display piano roll
         librosa.display.specshow(
@@ -211,9 +218,9 @@ def render_score(midi_path):
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Note')
         
-        # Save to temporary file
+        # Save to temporary file with lower DPI to prevent huge files
         score_path = midi_path.replace('.mid', '_score.png')
-        plt.savefig(score_path, dpi=150, bbox_inches='tight')
+        plt.savefig(score_path, dpi=72, bbox_inches='tight')
         plt.close()
         
         return score_path
@@ -499,7 +506,25 @@ if youtube_url and is_valid_youtube_url(youtube_url):
             st.subheader("🎼 Piano Roll Visualization")
             score_path = render_score(midi_path)
             if score_path and os.path.exists(score_path):
-                st.image(score_path, caption="Piano Roll Visualization")
+                # Create a horizontally scrollable container for the piano roll
+                with st.container():
+                    st.markdown("""
+                    <style>
+                    .piano-roll-container {
+                        overflow-x: auto;
+                        max-width: 100%;
+                    }
+                    .piano-roll-container img {
+                        max-width: none;
+                        width: auto;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
+                    with st.container():
+                        st.markdown('<div class="piano-roll-container">', unsafe_allow_html=True)
+                        st.image(score_path, caption="Piano Roll Visualization (scroll horizontally to see full width)")
+                        st.markdown('</div>', unsafe_allow_html=True)
             
             # Convert MIDI to audio for playback
             st.subheader("🎵 Play Transcribed Music")
@@ -598,7 +623,25 @@ if os.path.exists(twinkle_path):
     st.subheader("🎼 Piano Roll Visualization")
     score_path = render_score(midi_path)
     if score_path and os.path.exists(score_path):
-        st.image(score_path, caption="Piano Roll Visualization")
+        # Create a horizontally scrollable container for the piano roll
+        with st.container():
+            st.markdown("""
+            <style>
+            .piano-roll-container {
+                overflow-x: auto;
+                max-width: 100%;
+            }
+            .piano-roll-container img {
+                max-width: none;
+                width: auto;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            with st.container():
+                st.markdown('<div class="piano-roll-container">', unsafe_allow_html=True)
+                st.image(score_path, caption="Piano Roll Visualization (scroll horizontally to see full width)")
+                st.markdown('</div>', unsafe_allow_html=True)
     
     # Convert MIDI to audio for playback
     st.subheader("🎵 Play Transcribed Music")
@@ -670,7 +713,25 @@ if uploaded_file:
         st.subheader("🎼 Piano Roll Visualization")
         score_path = render_score(midi_path)
         if score_path and os.path.exists(score_path):
-            st.image(score_path, caption="Piano Roll Visualization")
+            # Create a horizontally scrollable container for the piano roll
+            with st.container():
+                st.markdown("""
+                <style>
+                .piano-roll-container {
+                    overflow-x: auto;
+                    max-width: 100%;
+                }
+                .piano-roll-container img {
+                    max-width: none;
+                    width: auto;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                with st.container():
+                    st.markdown('<div class="piano-roll-container">', unsafe_allow_html=True)
+                    st.image(score_path, caption="Piano Roll Visualization (scroll horizontally to see full width)")
+                    st.markdown('</div>', unsafe_allow_html=True)
         
         # Convert MIDI to audio for playback
         st.subheader("🎵 Play Transcribed Music")
