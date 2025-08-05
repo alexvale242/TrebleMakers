@@ -9,3 +9,4 @@ basic-pitch
 pyrubberband
 music21
 yt-dlp
+onnxruntime
