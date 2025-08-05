@@ -157,8 +157,8 @@ def analyze_music(note_sequence):
     return "\n".join(analysis)
 
 # Streamlit app
-st.title("🎵 Music Transcription to Score")
-st.write("Upload an MP3 file to convert it to a musical score")
+st.title("🎵 Music Transcription")
+st.write("Upload an MP3 file to convert it to MIDI and analyze the music")
 
 # Check if twinkle.mp3 exists
 twinkle_path = "twinkle.mp3"
@@ -199,49 +199,40 @@ if os.path.exists(twinkle_path):
     analysis = analyze_music(note_sequence)
     st.text(analysis)
     
-    # Render score
-    st.subheader("🎼 Musical Score")
+    # Render piano roll
+    st.subheader("🎼 Piano Roll Visualization")
     score_path = render_score(midi_path)
     if score_path and os.path.exists(score_path):
         st.image(score_path, caption="Piano Roll Visualization")
+    
+    # Convert MIDI to audio for playback
+    st.subheader("🎵 Play Transcribed Music")
+    audio_path = midi_to_audio(midi_path)
+    if audio_path and os.path.exists(audio_path):
+        with open(audio_path, 'rb') as f:
+            audio_bytes = f.read()
         
-        # Convert MIDI to audio for playback
-        st.subheader("🎵 Play Transcribed Music")
-        audio_path = midi_to_audio(midi_path)
-        if audio_path and os.path.exists(audio_path):
+        st.audio(audio_bytes, format='audio/wav')
+        
+        # Download buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            with open(midi_path, 'rb') as f:
+                st.download_button(
+                    label="Download MIDI",
+                    data=f.read(),
+                    file_name="transcribed_music.mid",
+                    mime="audio/midi"
+                )
+        
+        with col2:
             with open(audio_path, 'rb') as f:
-                audio_bytes = f.read()
-            
-            st.audio(audio_bytes, format='audio/wav')
-            
-            # Download buttons
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                with open(midi_path, 'rb') as f:
-                    st.download_button(
-                        label="Download MIDI",
-                        data=f.read(),
-                        file_name="transcribed_music.mid",
-                        mime="audio/midi"
-                    )
-            
-            with col2:
-                with open(score_path, 'rb') as f:
-                    st.download_button(
-                        label="Download Score Image",
-                        data=f.read(),
-                        file_name="musical_score.png",
-                        mime="image/png"
-                    )
-            
-            with col3:
-                with open(audio_path, 'rb') as f:
-                    st.download_button(
-                        label="Download Audio",
-                        data=f.read(),
-                        file_name="transcribed_music.wav",
-                        mime="audio/wav"
-                    )
+                st.download_button(
+                    label="Download Audio",
+                    data=f.read(),
+                    file_name="transcribed_music.wav",
+                    mime="audio/wav"
+                )
     
     # Clean up temporary files
     try:
@@ -254,7 +245,7 @@ if os.path.exists(twinkle_path):
         pass
 
 else:
-    st.error(f"Could not find {twinkle.mp3} in the current directory.")
+    st.error(f"Could not find {twinkle_path} in the current directory.")
     st.info("Please make sure the twinkle.mp3 file is in the same directory as this script.")
 
 # Also provide file upload option
@@ -269,16 +260,42 @@ if uploaded_file:
         st.subheader("📝 Note Sequence")
         st.text(note_sequence)
         
-        st.subheader("🎼 Musical Score")
+        # Music analysis
+        st.subheader("🎼 Music Analysis")
+        analysis = analyze_music(note_sequence)
+        st.text(analysis)
+        
+        # Render piano roll
+        st.subheader("🎼 Piano Roll Visualization")
         score_path = render_score(midi_path)
         if score_path and os.path.exists(score_path):
             st.image(score_path, caption="Piano Roll Visualization")
+        
+        # Convert MIDI to audio for playback
+        st.subheader("🎵 Play Transcribed Music")
+        audio_path = midi_to_audio(midi_path)
+        if audio_path and os.path.exists(audio_path):
+            with open(audio_path, 'rb') as f:
+                audio_bytes = f.read()
             
-            # Convert MIDI to audio for playback
-            st.subheader("🎵 Play Transcribed Music")
-            audio_path = midi_to_audio(midi_path)
-            if audio_path and os.path.exists(audio_path):
+            st.audio(audio_bytes, format='audio/wav')
+            
+            # Download buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                with open(midi_path, 'rb') as f:
+                    st.download_button(
+                        label="Download MIDI",
+                        data=f.read(),
+                        file_name="transcribed_music.mid",
+                        mime="audio/midi"
+                    )
+            
+            with col2:
                 with open(audio_path, 'rb') as f:
-                    audio_bytes = f.read()
-                
-                st.audio(audio_bytes, format='audio/wav')
+                    st.download_button(
+                        label="Download Audio",
+                        data=f.read(),
+                        file_name="transcribed_music.wav",
+                        mime="audio/wav"
+                    )

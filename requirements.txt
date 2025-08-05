@@ -6,4 +6,5 @@ matplotlib
 scipy
 soundfile
 basic-pitch
-pyrubberband 
+pyrubberband
+music21 
