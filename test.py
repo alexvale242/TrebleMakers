@@ -531,11 +531,11 @@ if youtube_url and is_valid_youtube_url(youtube_url):
                         )
                 
                 with col3:
-                    if st.button("🎼 Open in MuseScore"):
+                    if st.button("🎼 Open in MuseScore", key="musescore_youtube"):
                         open_in_musescore(midi_path)
                 
                 with col4:
-                    if st.button("📄 Open PDF"):
+                    if st.button("📄 Open PDF", key="pdf_youtube"):
                         open_pdf_from_midi(midi_path)
             
             # Clean up temporary files
@@ -630,11 +630,11 @@ if os.path.exists(twinkle_path):
                 )
         
         with col3:
-            if st.button("🎼 Open in MuseScore"):
+            if st.button("🎼 Open in MuseScore", key="musescore_twinkle"):
                 open_in_musescore(midi_path)
         
         with col4:
-            if st.button("📄 Open PDF"):
+            if st.button("📄 Open PDF", key="pdf_twinkle"):
                 open_pdf_from_midi(midi_path)
     
     # Clean up temporary files
@@ -702,9 +702,9 @@ if uploaded_file:
                     )
             
             with col3:
-                if st.button("🎼 Open in MuseScore"):
+                if st.button("🎼 Open in MuseScore", key="musescore_upload"):
                     open_in_musescore(midi_path)
             
             with col4:
-                if st.button("📄 Open PDF"):
+                if st.button("📄 Open PDF", key="pdf_upload"):
                     open_pdf_from_midi(midi_path)
