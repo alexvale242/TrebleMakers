@@ -12,6 +12,8 @@ import soundfile as sf
 import io
 from basic_pitch.inference import predict
 import basic_pitch
+import yt_dlp
+import re
 
 # Fix for missing scipy.signal.gaussian in newer versions
 if not hasattr(signal, 'gaussian'):
@@ -20,6 +22,84 @@ if not hasattr(signal, 'gaussian'):
         from scipy.signal.windows import gaussian as gaussian_window
         return gaussian_window(M, std, sym=sym)
     signal.gaussian = gaussian
+
+def download_youtube_audio(url):
+    """Download audio from YouTube URL and return the file path"""
+    try:
+        # Configure yt-dlp options for audio extraction
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'outtmpl': '%(title)s.%(ext)s',
+            'noplaylist': True,  # Only download the specific video, not the playlist
+            'extract_flat': False,  # Don't extract playlist info
+            'quiet': True,  # Reduce verbose output
+            'no_warnings': True,  # Suppress warnings
+            'ignoreerrors': False,  # Don't ignore errors
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Get video info
+            info = ydl.extract_info(url, download=False)
+            video_title = info.get('title', 'youtube_video')
+            
+            # Download the audio
+            ydl.download([url])
+            
+            # Find the downloaded file
+            downloaded_file = None
+            current_files = os.listdir('.')
+            
+            # Look for mp3 files that match the video title
+            for file in current_files:
+                if file.endswith('.mp3'):
+                    # Check if the video title is in the filename (case insensitive)
+                    if video_title.lower().replace(' ', '_').replace('-', '_') in file.lower().replace(' ', '_').replace('-', '_'):
+                        downloaded_file = file
+                        break
+            
+            if downloaded_file:
+                return downloaded_file
+            else:
+                # Fallback: find any mp3 file that was recently created
+                mp3_files = [f for f in current_files if f.endswith('.mp3')]
+                if mp3_files:
+                    # Get the most recently modified mp3 file
+                    mp3_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+                    return mp3_files[0]
+                else:
+                    raise Exception("Could not find downloaded audio file")
+                    
+    except Exception as e:
+        st.error(f"Error downloading YouTube audio: {str(e)}")
+        return None
+
+def is_valid_youtube_url(url):
+    """Check if the URL is a valid YouTube URL"""
+    youtube_patterns = [
+        r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=[\w-]+',
+        r'(?:https?://)?(?:www\.)?youtu\.be/[\w-]+',
+        r'(?:https?://)?(?:www\.)?youtube\.com/embed/[\w-]+',
+        r'(?:https?://)?(?:www\.)?youtube\.com/v/[\w-]+',
+    ]
+    
+    for pattern in youtube_patterns:
+        if re.match(pattern, url):
+            return True
+    return False
+
+def clean_youtube_url(url):
+    """Clean YouTube URL to extract just the video ID"""
+    # Remove playlist parameters and other extra parameters
+    url = re.sub(r'&list=[^&]*', '', url)
+    url = re.sub(r'&index=[^&]*', '', url)
+    url = re.sub(r'&start_radio=[^&]*', '', url)
+    url = re.sub(r'&t=[^&]*', '', url)
+    return url
 
 def midi_to_audio(midi_path):
     """Convert MIDI file to audio for playback"""
@@ -158,7 +238,109 @@ def analyze_music(note_sequence):
 
 # Streamlit app
 st.title("🎵 Music Transcription")
-st.write("Upload an MP3 file to convert it to MIDI and analyze the music")
+st.write("Upload an MP3 file or provide a YouTube link to convert it to MIDI and analyze the music")
+
+# YouTube link input
+st.subheader("🎥 YouTube Link")
+youtube_url = st.text_input("Enter YouTube URL:", placeholder="https://www.youtube.com/watch?v=...")
+st.caption("Supports: youtube.com/watch?v=..., youtu.be/..., and other YouTube video formats. Playlist URLs will download only the first video.")
+
+if youtube_url and is_valid_youtube_url(youtube_url):
+    # Clean the URL to remove playlist parameters
+    cleaned_url = clean_youtube_url(youtube_url)
+    st.info(f"Processing: {cleaned_url}")
+    with st.spinner("Downloading audio from YouTube..."):
+        audio_file_path = download_youtube_audio(cleaned_url)
+    
+    if audio_file_path and os.path.exists(audio_file_path):
+        st.success(f"Successfully downloaded: {audio_file_path}")
+        
+        # Process the downloaded audio file
+        with open(audio_file_path, 'rb') as f:
+            audio_data = f.read()
+        
+        # Create a file-like object for processing
+        class FileLikeObject:
+            def __init__(self, data):
+                self.data = data
+                self.position = 0
+            
+            def read(self):
+                return self.data
+            
+            def seek(self, position):
+                self.position = position
+        
+        audio_file = FileLikeObject(audio_data)
+        
+        # Process the audio
+        with st.spinner("Transcribing audio to MIDI..."):
+            midi_path = transcribe_to_midi(audio_file)
+        
+        if midi_path:
+            with st.spinner("Extracting notes..."):
+                note_sequence = extract_notes(midi_path)
+            
+            # Display results
+            st.subheader("📝 Note Sequence")
+            st.text(note_sequence)
+            
+            # Music analysis
+            st.subheader("🎼 Music Analysis")
+            analysis = analyze_music(note_sequence)
+            st.text(analysis)
+            
+            # Render piano roll
+            st.subheader("🎼 Piano Roll Visualization")
+            score_path = render_score(midi_path)
+            if score_path and os.path.exists(score_path):
+                st.image(score_path, caption="Piano Roll Visualization")
+            
+            # Convert MIDI to audio for playback
+            st.subheader("🎵 Play Transcribed Music")
+            audio_path = midi_to_audio(midi_path)
+            if audio_path and os.path.exists(audio_path):
+                with open(audio_path, 'rb') as f:
+                    audio_bytes = f.read()
+                
+                st.audio(audio_bytes, format='audio/wav')
+                
+                # Download buttons
+                col1, col2 = st.columns(2)
+                with col1:
+                    with open(midi_path, 'rb') as f:
+                        st.download_button(
+                            label="Download MIDI",
+                            data=f.read(),
+                            file_name="youtube_transcribed_music.mid",
+                            mime="audio/midi"
+                        )
+                
+                with col2:
+                    with open(audio_path, 'rb') as f:
+                        st.download_button(
+                            label="Download Audio",
+                            data=f.read(),
+                            file_name="youtube_transcribed_music.wav",
+                            mime="audio/wav"
+                        )
+            
+            # Clean up temporary files
+            try:
+                os.unlink(midi_path)
+                if score_path and os.path.exists(score_path):
+                    os.unlink(score_path)
+                if audio_path and os.path.exists(audio_path):
+                    os.unlink(audio_path)
+                # Clean up downloaded YouTube file
+                if audio_file_path and os.path.exists(audio_file_path):
+                    os.unlink(audio_file_path)
+            except Exception as e:
+                st.warning(f"Note: Some temporary files couldn't be cleaned up: {str(e)}")
+elif youtube_url and not is_valid_youtube_url(youtube_url):
+    st.error("Please enter a valid YouTube URL")
+
+st.subheader("📁 Or upload your own MP3 file:")
 
 # Check if twinkle.mp3 exists
 twinkle_path = "twinkle.mp3"
@@ -248,8 +430,6 @@ else:
     st.error(f"Could not find {twinkle_path} in the current directory.")
     st.info("Please make sure the twinkle.mp3 file is in the same directory as this script.")
 
-# Also provide file upload option
-st.subheader("Or upload your own MP3 file:")
 uploaded_file = st.file_uploader("Upload MP3", type=['mp3'])
 
 if uploaded_file:

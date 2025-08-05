@@ -7,4 +7,5 @@ scipy
 soundfile
 basic-pitch
 pyrubberband
-music21 
+music21
+yt-dlp
